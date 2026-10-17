@@ -72,7 +72,6 @@ app.include_router(audits_router)
 
 
 
-
 @app.get(
     "/health",
     response_model=HealthResponse,
