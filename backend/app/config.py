@@ -367,7 +367,7 @@ def _list_from_env(name: str) -> list[str]:
 DEFAULT_CORS_ALLOW_ORIGINS: tuple[str, ...] = (
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://ai-auditor-tax-invoice.vercel.app",
+    "https://ai-auditor-tax-invoice-ua5q.vercel.app",
 )
 """Origins the bundle UI runs on during development (Next.js dev/start server)."""
 
