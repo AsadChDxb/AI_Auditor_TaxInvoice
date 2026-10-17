@@ -1,0 +1,30 @@
+# Optional OCR fallback for scanned, image-only invoices (Phase 9).
+#
+# PaddleOCR is only needed when a PDF has no usable text layer: pdfplumber extracts the
+# normal documents, and this stack reads the scanned ones. It is deliberately kept out
+# of requirements.txt because PaddleOCR + PaddlePaddle are large, platform-specific
+# packages (the wheels depend on your OS, CPU/GPU and Python version), so the API and
+# the whole test suite run without them.
+#
+# Install with:
+#     .\.venv\Scripts\python.exe -m pip install -r requirements-ocr.txt
+#
+# Without it the API still works: a scanned upload is stored with
+# extraction_status="needs_ocr" and the quality report says the fallback is missing.
+# After installing, OCR is picked up automatically (no code change, no restart flag):
+# VAT_AUDIT_OCR_ENABLED / VAT_AUDIT_OCR_LANGUAGE / VAT_AUDIT_OCR_DPI / and the page
+# limits are configured through the environment (see .env.example).
+
+-r requirements.txt
+
+# PaddleOCR 2.x exposes engine.ocr(), 3.x exposes engine.predict(); the adapter in
+# app/services/ocr_fallback.py supports both, so either version works. It derives its
+# constructor keywords from the installed version, because PaddleOCR 3.x removed `use_gpu`
+# and rejects unknown arguments (`ValueError: Unknown argument: use_gpu`).
+#
+# Validated end to end with paddleocr 3.7.0 + paddlepaddle 3.3.1 (CPU wheels) on Windows,
+# against a real scanned invoice. The models are downloaded on the first OCR run (once) and
+# cached under %USERPROFILE%\.paddlex\official_models; .env.example documents the CPU
+# profile that was measured there (device=cpu, oneDNN off, 4 threads, mobile models, 150 DPI).
+paddleocr>=2.7
+paddlepaddle>=2.6
