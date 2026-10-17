@@ -9,12 +9,17 @@ Phase 8 adds the list/read endpoints the Next.js UI needs (``GET /documents`` an
 ``GET /audit/{document_no}``) and the CORS policy that lets a browser call the API.
 Phase 9 moves extraction to pdfplumber (text **and** tables), adds the extraction
 quality check and the optional PaddleOCR fallback for scanned pages.
+Phase 10 adds ``POST /analysis``: the same pipeline (text extraction, structured
+invoice extraction and audit) in one self-contained request, for serverless hosts such
+as Vercel where two requests may be served by different instances and process-local
+memory cannot be relied on.
 """
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from app.api.analysis import router as analysis_router
 from app.api.audits import router as audits_router
 from app.api.documents import router as documents_router
 from app.config import get_cors_allow_origins
@@ -67,6 +72,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(analysis_router)
 app.include_router(documents_router)
 app.include_router(audits_router)
 

@@ -33,6 +33,10 @@ Implemented so far:
   against the enabled rules, recomputes every VAT amount in Python with `Decimal`,
   validates all model output, and stores one report per document in memory. It exposes
   no HTTP endpoint yet: that is Phase 6.
+- `POST /analysis`: text extraction, structured invoice extraction and the VAT audit in
+  one self-contained request, so the API works on serverless hosts (Vercel, Lambda,
+  Cloud Run) where process-local memory cannot be shared between requests. See
+  [Serverless / multi-instance deployments](#serverless--multi-instance-deployments-vercel-lambda-cloud-run).
 
 Planned: nothing — every phase in the roadmap below is implemented.
 
@@ -378,6 +382,46 @@ setting buys.
 | GET | `/documents/{document_no}` | Retrieve document metadata, extraction status and invoice fields. |
 | POST | `/audit/{document_no}` | Audit the extracted invoice against the enabled VAT rules and return the report. |
 | GET | `/audit/{document_no}` | Read the latest stored report without re-running the audit (404 until one exists). |
+| POST | `/analysis` | **Serverless workflow.** Upload one PDF and run text extraction, invoice extraction and the VAT audit inside a single request, returning a self-contained payload (document + invoice + report + table row). |
+
+### Serverless / multi-instance deployments (Vercel, Lambda, Cloud Run)
+
+The three-step workflow above resolves a document number through
+`app/storage/memory.py`, which is **process-local**. On a serverless platform every
+request may be served by a different (or freshly started) instance, so the second call
+can answer:
+
+```
+404 Document 'DOC-…' was not found. Documents are held in memory only, so records
+are lost when the service restarts.
+```
+
+Use `POST /analysis` there instead. It takes the PDF on every call and returns
+everything in one response, so no request depends on another request's memory:
+
+```powershell
+curl.exe -X POST "$API/analysis" -F "file=@sample_invoice.pdf"
+curl.exe -X POST "$API/analysis?run_audit=false" -F "file=@sample_invoice.pdf"
+# re-audit the fields the client already holds, without a second extraction call:
+curl.exe -X POST "$API/analysis" -F "file=@sample_invoice.pdf" `
+  -F "document_no=DOC-…" -F "invoice={…InvoiceData JSON…}"
+```
+
+| Field | Where | Meaning |
+| ----- | ----- | ------- |
+| `file` | form | The PDF. Required on every call. |
+| `invoice` | form | Optional `InvoiceData` JSON from an earlier response; skips the LLM extraction and audits these fields. |
+| `document_no` | form | Optional number from an earlier response, so a re-extraction/re-audit updates the same row. |
+| `run_audit` | query | `false` stops after invoice extraction and returns `report: null`. |
+
+A document that needs OCR is returned with `200`, `invoice: null` and `report: null`
+(nothing failed: the PDF simply has no readable text). Provider problems still fail
+loudly with `502`/`503`/`504`, and an invalid `invoice` or `document_no` is `422`.
+
+Two hosting limits are worth knowing: Vercel caps the request body at **4.5 MB**
+(lower than `VAT_AUDIT_MAX_UPLOAD_BYTES`), and a function has a maximum duration, so a
+large scanned PDF that needs PaddleOCR may time out before the audit finishes. Lower
+`VAT_AUDIT_MAX_UPLOAD_BYTES` accordingly and prefer text-based PDFs.
 
 Example response from `GET /health`:
 

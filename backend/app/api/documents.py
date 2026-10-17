@@ -24,7 +24,7 @@ from app.models.document import (
     ExtractionQualityInfo,
     PageContent,
 )
-from app.models.invoice import InvoiceExtractionResponse
+from app.models.invoice import InvoiceData, InvoiceExtractionResponse
 from app.services.invoice_extractor import (
     DocumentNotExtractableError,
     InvoiceExtractionError,
@@ -143,6 +143,81 @@ async def _read_upload_within_limit(upload: UploadFile) -> bytes:
     return bytes(buffer)
 
 
+async def extract_document_record(
+    file: UploadFile,
+    ocr_engine: OcrEngine | None,
+    *,
+    document_no: str | None = None,
+) -> tuple[DocumentRecord, str]:
+    """Read, validate and extract one uploaded PDF, then register the record.
+
+    Shared by ``POST /documents/upload`` (text extraction only) and
+    ``POST /analysis`` (the stateless single-request workflow), so both endpoints
+    accept exactly the same files and build exactly the same record. Supplying
+    `document_no` reuses an existing row, which lets a client re-extract or re-audit
+    a document it already holds without creating a duplicate.
+
+    Returns the stored record and the user-facing message describing the
+    text-extraction outcome. HTTP errors match the upload route: 400 for an empty or
+    corrupted PDF, 413 for an oversized upload and 415 for non-PDF content.
+    """
+
+    content_type = file.content_type
+    filename = file.filename or "unnamed"
+    data = await _read_upload_within_limit(file)
+    await file.close()
+
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded file is empty.",
+        )
+
+    try:
+        extraction = extract_pdf_text(data, ocr_engine=ocr_engine)
+    except PdfValidationError as exc:
+        error_code = (
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
+            if not isinstance(exc, CorruptedPdfError)
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=error_code, detail=str(exc)) from exc
+
+    if extraction.has_text:
+        extraction_status = "extracted"
+        extraction_error: str | None = None
+        message = EXTRACTED_MESSAGE
+        if extraction.used_ocr:
+            message = (
+                OCR_FALLBACK_NOTE.format(
+                    pages=", ".join(str(page) for page in extraction.ocr_pages)
+                )
+                + " "
+                + message
+            )
+    else:
+        extraction_status = "needs_ocr"
+        extraction_error = NEEDS_OCR_ERROR
+        message = NEEDS_OCR_MESSAGE
+
+    record = document_registry.add(
+        DocumentRecord(
+            document_no=document_no or generate_document_no(),
+            original_filename=filename,
+            content_type=content_type,
+            size_bytes=len(data),
+            uploaded_at=datetime.now(timezone.utc),
+            page_count=extraction.page_count,
+            pages=extraction.pages,
+            extraction_status=extraction_status,
+            extraction_error=extraction_error,
+            extraction_quality=extraction.quality,
+        )
+    )
+
+    return record, message
+
+
 def get_invoice_extraction_service() -> InvoiceExtractionService:
     """Provide the invoice extraction service.
 
@@ -213,7 +288,7 @@ def _require_document(document_no: str) -> DocumentRecord:
     return record
 
 
-def _to_detail(record: DocumentRecord, include_text: bool) -> DocumentDetail:
+def to_document_detail(record: DocumentRecord, include_text: bool) -> DocumentDetail:
     """Build the GET response for `record`, omitting full text unless requested."""
 
     pages = [
@@ -264,7 +339,7 @@ def _to_detail(record: DocumentRecord, include_text: bool) -> DocumentDetail:
     )
 
 
-def _to_list_item(
+def to_list_item(
     record: DocumentRecord, report: AuditReport | None
 ) -> DocumentListItem:
     """Build one `GET /documents` row from a stored record and its latest report."""
@@ -309,6 +384,63 @@ def _to_list_item(
     )
 
 
+def to_summary(record: DocumentRecord, message: str) -> DocumentSummary:
+    """Build the ``POST /documents/upload`` response for a stored record."""
+
+    return DocumentSummary(
+        document_no=record.document_no,
+        original_filename=record.original_filename,
+        content_type=record.content_type,
+        size_bytes=record.size_bytes,
+        uploaded_at=record.uploaded_at,
+        page_count=record.page_count,
+        extraction_status=record.extraction_status,
+        extraction_error=record.extraction_error,
+        pages_with_text=record.pages_with_text,
+        total_characters=record.total_characters,
+        used_ocr=record.used_ocr,
+        ocr_pages=record.ocr_pages,
+        table_count=record.table_count,
+        quality=_quality_info(record.extraction_quality),
+        message=message,
+    )
+
+
+def run_invoice_extraction(
+    service: InvoiceExtractionService, record: DocumentRecord
+) -> InvoiceData:
+    """Extract `record`'s structured fields, mapping failures onto HTTP errors.
+
+    Shared by ``POST /documents/{document_no}/extract`` (stored document) and
+    ``POST /analysis`` (self-contained request), so both report 409 for a document
+    that needs OCR, 503 for missing LLM configuration, 504 for a provider timeout and
+    502 for any other provider or validation failure.
+    """
+
+    try:
+        return service.extract(record)
+    except DocumentNotExtractableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    except LLMConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    except LLMTimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(exc)
+        ) from exc
+    except (
+        LLMProviderError,
+        LLMInvalidResponseError,
+        InvoiceExtractionError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
+
+
 @router.post(
     "/upload",
     response_model=DocumentSummary,
@@ -342,75 +474,8 @@ async def upload_document(
 ) -> DocumentSummary:
     """Validate the upload, extract its text, store it, and return a summary."""
 
-    content_type = file.content_type
-    data = await _read_upload_within_limit(file)
-    await file.close()
-
-    if not data:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The uploaded file is empty.",
-        )
-
-    try:
-        extraction = extract_pdf_text(data, ocr_engine=ocr_engine)
-    except PdfValidationError as exc:
-        error_code = (
-            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
-            if not isinstance(exc, CorruptedPdfError)
-            else status.HTTP_400_BAD_REQUEST
-        )
-        raise HTTPException(status_code=error_code, detail=str(exc)) from exc
-
-    if extraction.has_text:
-        extraction_status = "extracted"
-        extraction_error: str | None = None
-        message = EXTRACTED_MESSAGE
-        if extraction.used_ocr:
-            message = (
-                OCR_FALLBACK_NOTE.format(
-                    pages=", ".join(str(page) for page in extraction.ocr_pages)
-                )
-                + " "
-                + message
-            )
-    else:
-        extraction_status = "needs_ocr"
-        extraction_error = NEEDS_OCR_ERROR
-        message = NEEDS_OCR_MESSAGE
-
-    record = document_registry.add(
-        DocumentRecord(
-            document_no=generate_document_no(),
-            original_filename=file.filename or "unnamed",
-            content_type=content_type,
-            size_bytes=len(data),
-            uploaded_at=datetime.now(timezone.utc),
-            page_count=extraction.page_count,
-            pages=extraction.pages,
-            extraction_status=extraction_status,
-            extraction_error=extraction_error,
-            extraction_quality=extraction.quality,
-        )
-    )
-
-    return DocumentSummary(
-        document_no=record.document_no,
-        original_filename=record.original_filename,
-        content_type=record.content_type,
-        size_bytes=record.size_bytes,
-        uploaded_at=record.uploaded_at,
-        page_count=record.page_count,
-        extraction_status=record.extraction_status,
-        extraction_error=record.extraction_error,
-        pages_with_text=record.pages_with_text,
-        total_characters=record.total_characters,
-        used_ocr=record.used_ocr,
-        ocr_pages=record.ocr_pages,
-        table_count=record.table_count,
-        quality=_quality_info(record.extraction_quality),
-        message=message,
-    )
+    record, message = await extract_document_record(file, ocr_engine)
+    return to_summary(record, message)
 
 
 @router.get(
@@ -433,7 +498,7 @@ def list_documents() -> DocumentListResponse:
     """Return one row per stored document, newest upload first."""
 
     items = [
-        _to_list_item(record, report_store.get(record.document_no))
+        to_list_item(record, report_store.get(record.document_no))
         for record in document_registry.list_records()
     ]
 
@@ -470,7 +535,7 @@ def get_document(
 ) -> DocumentDetail:
     """Return metadata for a stored document, or 404 when it is unknown."""
 
-    return _to_detail(_require_document(document_no), include_text)
+    return to_document_detail(_require_document(document_no), include_text)
 
 
 @router.post(
@@ -516,28 +581,7 @@ def extract_invoice_fields(
             message=REUSED_EXTRACTION_MESSAGE,
         )
 
-    try:
-        invoice = service.extract(record)
-    except DocumentNotExtractableError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        ) from exc
-    except LLMConfigurationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
-    except LLMTimeoutError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(exc)
-        ) from exc
-    except (
-        LLMProviderError,
-        LLMInvalidResponseError,
-        InvoiceExtractionError,
-    ) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-        ) from exc
+    invoice = run_invoice_extraction(service, record)
 
     document_registry.set_invoice(record.document_no, invoice)
 

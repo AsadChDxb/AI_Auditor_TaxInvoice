@@ -242,3 +242,19 @@ export interface DocumentListResponse {
   documents: DocumentListItem[];
   notes: string[];
 }
+
+/**
+ * Response of `POST /analysis`: the whole workflow in one self-contained payload.
+ *
+ * The API keeps documents in process memory, so on a serverless or multi-instance
+ * deployment a follow-up request can reach an instance that never saw the upload.
+ * `/analysis` therefore returns the document detail, the invoice, the report and the
+ * table row together, and the client sends the PDF again for every action.
+ */
+export interface DocumentAnalysisResponse {
+  document: DocumentDetail;
+  report: AuditReport | null;
+  row: DocumentListItem;
+  message: string;
+  notes: string[];
+}

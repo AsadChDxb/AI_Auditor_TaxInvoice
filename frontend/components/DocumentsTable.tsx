@@ -48,8 +48,8 @@ export function DocumentsTable({
         <div>
           <h2 className="card-title">Documents</h2>
           <p className="card-sub">
-            {documents.length} document{documents.length === 1 ? "" : "s"} in memory ·
-            status, result and actions per row
+            {documents.length} document{documents.length === 1 ? "" : "s"} in this
+            session · status, result and actions per row
           </p>
         </div>
         <div className="card-actions">

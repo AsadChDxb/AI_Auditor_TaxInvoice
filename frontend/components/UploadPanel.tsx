@@ -51,8 +51,8 @@ export function UploadPanel({
         <div>
           <h2 className="card-title">Step 1 · Upload document</h2>
           <p className="card-sub">
-            One text-based invoice PDF. Text is extracted page by page and kept in
-            memory.
+            One invoice PDF. Text and structured fields are extracted in a single
+            request, and the result stays in this tab.
           </p>
         </div>
         <span className="card-sub">Max 10 MB</span>
@@ -125,7 +125,7 @@ export function UploadPanel({
             }}
           >
             {busy ? <span className="spinner" aria-hidden="true" /> : null}
-            {busy ? "Uploading…" : "Upload PDF"}
+            {busy ? "Extracting…" : "Upload & extract"}
           </button>
         </div>
 

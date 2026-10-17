@@ -11,6 +11,13 @@ Upload PDF ─▶ Output of the document ─▶ Extracted invoice data ─▶ Au
                                   status + Run audit + View report
 ```
 
+The screen calls `POST /analysis` (not the three-step
+`upload → extract → audit` workflow) so it also works on a serverless host such as
+Vercel. That endpoint takes the PDF again on every call and returns the document, its
+invoice fields, the report and the table row in one response, so the UI never depends
+on the API still holding a document number from an earlier request. The file and the
+results stay in the browser tab; reloading the page clears the table.
+
 ## Requirements
 
 - Node.js 18.18 or newer (developed on Node 22 with Next.js 15 and React 19)
@@ -93,7 +100,10 @@ frontend/
 
 ## Notes and limitations
 
-- The backend stores documents and reports in memory, so restarting it empties the table.
+- The backend stores documents and reports in process memory, so restarting it empties
+  the table the API reports. The UI keeps its own rows for the current tab and re-sends
+  the PDF for every action, so a serverless deployment (Vercel) works without shared
+  memory; a page reload clears the rows.
 - `NEXT_PUBLIC_API_BASE_URL` is public by design: the UI talks to the API directly from
   the browser, and the API needs no credential of its own (the LLM key stays in the
   backend's `.env`).

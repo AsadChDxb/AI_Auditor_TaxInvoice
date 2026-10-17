@@ -10,10 +10,12 @@
 
 import type {
   AuditReport,
+  DocumentAnalysisResponse,
   DocumentDetail,
   DocumentListResponse,
   DocumentSummary,
   HealthResponse,
+  InvoiceData,
   InvoiceExtractionResponse,
 } from "./types";
 
@@ -129,6 +131,42 @@ export function extractInvoice(
     `/documents/${encodeURIComponent(documentNo)}/extract${query}`,
     { method: "POST" },
   );
+}
+
+/**
+ * `POST /analysis` — text extraction, invoice extraction and (optionally) the audit
+ * in one request, returning a self-contained payload.
+ *
+ * The PDF is sent again on every call on purpose: a serverless deployment (Vercel)
+ * cannot rely on the API remembering an earlier upload, because the next request may
+ * be served by a different instance. Re-send `documentNo` to keep the same row and
+ * `invoice` to re-audit the already extracted fields without another extraction call.
+ */
+export function analyzeDocument(
+  file: File,
+  options: {
+    documentNo?: string | null;
+    invoice?: InvoiceData | null;
+    runAudit?: boolean;
+  } = {},
+): Promise<DocumentAnalysisResponse> {
+  const form = new FormData();
+  form.append("file", file);
+
+  if (options.documentNo) {
+    form.append("document_no", options.documentNo);
+  }
+  if (options.invoice) {
+    form.append("invoice", JSON.stringify(options.invoice));
+  }
+
+  const query = options.runAudit === false ? "?run_audit=false" : "";
+
+  // No Content-Type header: the browser adds the multipart boundary itself.
+  return request<DocumentAnalysisResponse>(`/analysis${query}`, {
+    method: "POST",
+    body: form,
+  });
 }
 
 /** `POST /audit/{document_no}` — run (or re-run) the VAT audit. */

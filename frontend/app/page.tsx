@@ -6,17 +6,19 @@
  * It drives the documented workflow against the FastAPI backend and keeps every result
  * on one page:
  *
- * 1. upload a PDF (`POST /documents/upload`) and show the upload response,
- * 2. show the output of the uploaded document (page-level text extraction,
- *    `GET /documents/{document_no}`),
- * 3. extract and show the structured invoice data
- *    (`POST /documents/{document_no}/extract`),
- * 4. audit the invoice and show the report (`POST /audit/{document_no}`), and
+ * 1. upload a PDF and extract its invoice fields in one request (`POST /analysis`),
+ * 2. show the output of the uploaded document (page-level text extraction),
+ * 3. show the structured invoice data from that same response,
+ * 4. audit the invoice and show the report (`POST /analysis` with the invoice),
  * 5. keep every document in one table row with its status, result and the
- *    Run audit / View report actions (`GET /documents`, `GET /audit/{document_no}`).
+ *    Run audit / View report actions.
  *
- * The selected row is the source of truth for the panels below the table, and the
- * table is refreshed after every action so the row status always matches the API.
+ * Deployment note: the API keeps documents in process memory, which a serverless host
+ * (Vercel) cannot share between requests, so the screen never relies on a document
+ * number resolving on the server. The PDF and the extracted invoice fields stay in
+ * this browser tab and are sent again for every action; `POST /analysis` returns a
+ * self-contained payload (document + invoice + report + table row). The classic
+ * three-step endpoints are still used for rows the server itself knows about.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -32,13 +34,13 @@ import { UploadPanel } from "@/components/UploadPanel";
 import {
   API_BASE_URL,
   ApiError,
+  analyzeDocument,
   auditDocument,
   checkHealth,
   extractInvoice,
   getDocument,
   listDocuments,
   storedAuditReport,
-  uploadDocument,
 } from "@/lib/api";
 import { AUDIT_STATUS_LABELS, formatPercent } from "@/lib/format";
 import type {
@@ -52,6 +54,24 @@ import type {
 type BusyAction = "extract" | "audit" | "report" | null;
 type Health = "checking" | "ok" | "down";
 
+/**
+ * One document whose result lives in this browser tab.
+ *
+ * `file` is kept so a re-extraction or a re-audit can send the PDF again; nothing here
+ * depends on the API still holding the document under its number.
+ */
+type LocalAnalysis = {
+  file: File;
+  detail: DocumentDetail;
+  report: AuditReport | null;
+  row: DocumentListItem;
+};
+
+const CLIENT_STORE_NOTE =
+  "Results are kept in this browser tab, not on the server: the PDF is sent again " +
+  "with every action, so the API does not need shared memory between requests. " +
+  "Reloading the page clears the table.";
+
 /** Turn anything thrown by the API layer into a sentence for the user. */
 function messageOf(error: unknown): string {
   if (error instanceof ApiError || error instanceof Error) {
@@ -60,13 +80,60 @@ function messageOf(error: unknown): string {
   return "Unexpected error.";
 }
 
+/** Merge rows the API still knows about with the rows held in this tab. */
+function mergeRows(
+  serverRows: DocumentListItem[],
+  analyses: Record<string, LocalAnalysis>,
+): DocumentListItem[] {
+  const rows = new Map<string, DocumentListItem>();
+
+  for (const row of serverRows) {
+    rows.set(row.document_no, row);
+  }
+  // A local row is newer information (it was just produced by this tab), so it wins.
+  for (const analysis of Object.values(analyses)) {
+    rows.set(analysis.row.document_no, analysis.row);
+  }
+
+  return [...rows.values()].sort((left, right) =>
+    right.uploaded_at.localeCompare(left.uploaded_at),
+  );
+}
+
+/** Build the `POST /documents/upload` summary shape from an analysis response. */
+function summaryOf(detail: DocumentDetail, message: string): DocumentSummary {
+  return {
+    document_no: detail.document_no,
+    original_filename: detail.original_filename,
+    content_type: detail.content_type,
+    size_bytes: detail.size_bytes,
+    uploaded_at: detail.uploaded_at,
+    page_count: detail.page_count,
+    extraction_status: detail.extraction_status,
+    extraction_error: detail.extraction_error,
+    pages_with_text: detail.pages_with_text,
+    total_characters: detail.total_characters,
+    used_ocr: detail.used_ocr,
+    ocr_pages: detail.ocr_pages,
+    table_count: detail.table_count,
+    quality: detail.quality,
+    message,
+  };
+}
+
 export default function AuditConsolePage() {
   const [health, setHealth] = useState<Health>("checking");
 
-  const [documents, setDocuments] = useState<DocumentListItem[]>([]);
+  const [serverDocuments, setServerDocuments] = useState<DocumentListItem[]>([]);
+  const [analyses, setAnalyses] = useState<Record<string, LocalAnalysis>>({});
   const [notes, setNotes] = useState<string[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+
+  const documents = useMemo(
+    () => mergeRows(serverDocuments, analyses),
+    [serverDocuments, analyses],
+  );
 
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -94,7 +161,7 @@ export default function AuditConsolePage() {
     setListLoading(true);
     try {
       const response = await listDocuments();
-      setDocuments(response.documents);
+      setServerDocuments(response.documents);
       setNotes(response.notes);
       setListError(null);
       setHealth("ok");
@@ -106,13 +173,24 @@ export default function AuditConsolePage() {
     }
   }, []);
 
-  /** Load one document into the panels, including its stored report when it has one. */
+  /** Load one document into the panels, including its report when there is one. */
   const loadDocument = useCallback(
     async (documentNo: string, withText: boolean) => {
       setSelected(documentNo);
-      setDetailLoading(true);
       setExtractError(null);
       setAuditError(null);
+
+      const local = analyses[documentNo];
+      if (local) {
+        // The result already lives in this tab, so no request is needed: on a
+        // serverless host the API may no longer know this document number at all.
+        setDetail(local.detail);
+        setReport(local.report);
+        setDetailLoading(false);
+        return;
+      }
+
+      setDetailLoading(true);
       try {
         const loaded = await getDocument(documentNo, withText);
         setDetail(loaded);
@@ -137,7 +215,7 @@ export default function AuditConsolePage() {
         setDetailLoading(false);
       }
     },
-    [],
+    [analyses],
   );
 
   useEffect(() => {
@@ -152,26 +230,64 @@ export default function AuditConsolePage() {
   async function handleUpload(file: File) {
     setUploadBusy(true);
     setUploadError(null);
+    setExtractError(null);
+    setAuditError(null);
     try {
-      const summary = await uploadDocument(file);
-      setUploadResult(summary);
-      await Promise.all([refreshList(), loadDocument(summary.document_no, includeText)]);
+      // One request reads the PDF and extracts the structured fields. The audit stays
+      // a separate click so the more expensive model review only runs on request.
+      const result = await analyzeDocument(file, { runAudit: false });
+      const local: LocalAnalysis = {
+        file,
+        detail: result.document,
+        report: result.report,
+        row: result.row,
+      };
+
+      setAnalyses((previous) => ({ ...previous, [local.row.document_no]: local }));
+      setSelected(local.row.document_no);
+      setDetail(local.detail);
+      setReport(local.report);
+      setUploadResult(summaryOf(local.detail, result.message));
+      setHealth("ok");
+
+      // Best effort: on a single long-running instance the API lists the row too.
+      await refreshList();
     } catch (error) {
       setUploadError(messageOf(error));
+      setUploadResult(null);
     } finally {
       setUploadBusy(false);
     }
   }
 
   async function handleExtract(documentNo: string, force: boolean) {
+    const local = analyses[documentNo];
     setSelected(documentNo);
     setBusyRow(documentNo);
     setBusyAction("extract");
     setExtractBusy(true);
     setExtractError(null);
     try {
-      await extractInvoice(documentNo, force);
-      await Promise.all([refreshList(), loadDocument(documentNo, includeText)]);
+      if (local) {
+        // Send the PDF again: the API may not hold this document in memory any more.
+        const result = await analyzeDocument(local.file, {
+          documentNo,
+          runAudit: false,
+        });
+        const updated: LocalAnalysis = {
+          file: local.file,
+          detail: result.document,
+          report: null,
+          row: result.row,
+        };
+        setAnalyses((previous) => ({ ...previous, [documentNo]: updated }));
+        setDetail(updated.detail);
+        setReport(null);
+        setUploadResult(summaryOf(updated.detail, result.message));
+      } else {
+        await extractInvoice(documentNo, force);
+        await Promise.all([refreshList(), loadDocument(documentNo, includeText)]);
+      }
     } catch (error) {
       setExtractError(messageOf(error));
     } finally {
@@ -183,15 +299,33 @@ export default function AuditConsolePage() {
 
   async function handleAudit(documentNo: string) {
     const isNewSelection = selected !== documentNo;
+    const local = analyses[documentNo];
     setSelected(documentNo);
     setBusyRow(documentNo);
     setBusyAction("audit");
     setAuditBusy(true);
     setAuditError(null);
     try {
-      const fresh = await auditDocument(documentNo);
-      await Promise.all([refreshList(), loadDocument(documentNo, includeText)]);
-      setReport(fresh);
+      if (local) {
+        const result = await analyzeDocument(local.file, {
+          documentNo,
+          invoice: local.detail.invoice,
+        });
+        const updated: LocalAnalysis = {
+          file: local.file,
+          detail: result.document,
+          report: result.report,
+          row: result.row,
+        };
+        setAnalyses((previous) => ({ ...previous, [documentNo]: updated }));
+        setDetail(updated.detail);
+        setReport(updated.report);
+        setUploadResult(summaryOf(updated.detail, result.message));
+      } else {
+        const fresh = await auditDocument(documentNo);
+        await Promise.all([refreshList(), loadDocument(documentNo, includeText)]);
+        setReport(fresh);
+      }
       if (isNewSelection) {
         reportPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }
@@ -210,7 +344,8 @@ export default function AuditConsolePage() {
     setBusyAction("report");
     setAuditError(null);
     try {
-      setModalReport(await storedAuditReport(documentNo));
+      const localReport = analyses[documentNo]?.report;
+      setModalReport(localReport ?? (await storedAuditReport(documentNo)));
     } catch (error) {
       setAuditError(messageOf(error));
     } finally {
@@ -338,7 +473,7 @@ export default function AuditConsolePage() {
       </header>
 
       <main className="page">
-        {listError ? (
+        {listError && documents.length === 0 ? (
           <div className="alert alert-error">
             <div>
               <strong>Could not load data.</strong> {listError}
@@ -369,7 +504,7 @@ export default function AuditConsolePage() {
           selected={selected}
           busyRow={busyRow}
           busyAction={busyAction}
-          notes={notes}
+          notes={[...notes, CLIENT_STORE_NOTE]}
           onOpen={handleOpen}
           onExtract={(document) => void handleExtract(document.document_no, document.invoice_extracted)}
           onAudit={(document) => void handleAudit(document.document_no)}
