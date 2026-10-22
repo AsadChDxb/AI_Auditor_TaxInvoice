@@ -23,6 +23,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { ArchitectureModal } from "@/components/ArchitectureModal";
 import { AuditReportView } from "@/components/AuditReportView";
 import { AuditStatusBadge } from "@/components/Badges";
 import { DocumentOutputPanel } from "@/components/DocumentOutputPanel";
@@ -162,6 +163,7 @@ export default function AuditConsolePage() {
   const [busyRow, setBusyRow] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [modalReport, setModalReport] = useState<AuditReport | null>(null);
+  const [architectureOpen, setArchitectureOpen] = useState(false);
 
   const reportPanelRef = useRef<HTMLElement | null>(null);
 
@@ -261,6 +263,32 @@ export default function AuditConsolePage() {
       cancelled = true;
     };
   }, []);
+
+  // `#architecture` deep-links the explainer: handy for a demo, and it survives a reload.
+  useEffect(() => {
+    function syncFromHash() {
+      setArchitectureOpen(window.location.hash === "#architecture");
+    }
+    syncFromHash();
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
+  }, []);
+
+  function openArchitecture() {
+    history.replaceState(null, "", "#architecture");
+    setArchitectureOpen(true);
+  }
+
+  function closeArchitecture() {
+    setArchitectureOpen(false);
+    if (window.location.hash === "#architecture") {
+      history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}`,
+      );
+    }
+  }
 
   // --- actions --------------------------------------------------------------------
 
@@ -497,6 +525,13 @@ export default function AuditConsolePage() {
               {listLoading ? <span className="spinner" aria-hidden="true" /> : null}
               Reload documents
             </button>
+            <button
+              type="button"
+              className="btn btn-invert btn-sm"
+              onClick={openArchitecture}
+            >
+              Technical architecture
+            </button>
             <a
               className="btn btn-invert btn-sm"
               href={`${API_BASE_URL}/docs`}
@@ -654,6 +689,9 @@ export default function AuditConsolePage() {
         </div>
       </main>
 
+      {architectureOpen ? (
+        <ArchitectureModal onClose={closeArchitecture} />
+      ) : null}
       {modalReport ? (
         <ReportModal report={modalReport} onClose={() => setModalReport(null)} />
       ) : null}
