@@ -62,7 +62,7 @@ on the API with `VAT_AUDIT_CORS_ALLOW_ORIGINS` (see the backend README).
 | Run audit / Extract buttons | `POST /audit/{document_no}`, `POST /documents/{document_no}/extract` | Per row; disabled when the step is not allowed (no text layer, or no extracted fields yet). |
 | View report | `GET /audit/{document_no}` | Opens the stored report in a full-screen reader. It never re-runs the audit and never calls the model. |
 | Sample invoices (in Step 1) | `GET /samples`, `GET /samples/{file_name}` | Lists the sample PDFs the API ships with, each with its expected outcome. **View PDF** opens the file in a new tab; **Use sample** downloads it and uploads it through the same request a picked file uses. |
-| Architecture (header) | — | Diagram only: one request through browser → API (read PDF, quality gate, OCR fallback) → AI extraction → business-logic VAT rules → AI review → report JSON, colour-coded by owner, with an animated data path. `#architecture` deep-links it. |
+| Architecture (opens on load) | — | Diagram only: one request through browser → API (read PDF, quality gate, OCR fallback) → AI extraction → business-logic VAT rules → AI review → report JSON, colour-coded by owner, with an animated data path. Close (Esc) returns to the console; the **Architecture** button or `#architecture` brings it back. |
 
 The step rail and the table are refreshed after every action, so a row's status always
 matches the API. `Open` loads a row into the panels; `Run audit` also scrolls to the

@@ -163,7 +163,8 @@ export default function AuditConsolePage() {
   const [busyRow, setBusyRow] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [modalReport, setModalReport] = useState<AuditReport | null>(null);
-  const [architectureOpen, setArchitectureOpen] = useState(false);
+  // The architecture diagram is the landing view: the console opens with it.
+  const [architectureOpen, setArchitectureOpen] = useState(true);
 
   const reportPanelRef = useRef<HTMLElement | null>(null);
 
@@ -264,12 +265,16 @@ export default function AuditConsolePage() {
     };
   }, []);
 
-  // `#architecture` deep-links the explainer: handy for a demo, and it survives a reload.
+  // The diagram opens on load, and `#architecture` keeps the screen in the URL so a
+  // reload, a shared link or the browser's back button all show the same thing.
   useEffect(() => {
+    if (!window.location.hash) {
+      history.replaceState(null, "", "#architecture");
+    }
+
     function syncFromHash() {
       setArchitectureOpen(window.location.hash === "#architecture");
     }
-    syncFromHash();
     window.addEventListener("hashchange", syncFromHash);
     return () => window.removeEventListener("hashchange", syncFromHash);
   }, []);
