@@ -383,6 +383,8 @@ setting buys.
 | POST | `/audit/{document_no}` | Audit the extracted invoice against the enabled VAT rules and return the report. |
 | GET | `/audit/{document_no}` | Read the latest stored report without re-running the audit (404 until one exists). |
 | POST | `/analysis` | **Serverless workflow.** Upload one PDF and run text extraction, invoice extraction and the VAT audit inside a single request, returning a self-contained payload (document + invoice + report + table row). |
+| GET | `/samples` | List the bundled sample invoice PDFs (title, supplier, size, expected audit outcome) so a UI can offer them for testing. |
+| GET | `/samples/{file_name}` | Stream one sample PDF with `Content-Disposition: inline`. Only PDF file names inside the samples folder are served; anything else is a 404. |
 
 ### Serverless / multi-instance deployments (Vercel, Lambda, Cloud Run)
 
@@ -716,6 +718,38 @@ cd backend
 
 The output of the Phase 7 live run is recorded in `SAMPLE_AUDIT_REPORT.md`.
 
+### Sample invoices
+
+`scripts/generate_sample_invoices.py` authors five A4 tax invoices into `sample_inv/`
+(two valid, three with a documented defect). Each one has a supplier letterhead, a billed
+party, a ruled nine-column line-item grid, a VAT summary and an amount in words. They are
+text PDFs, so they exercise the normal `pdfplumber` path instead of the OCR fallback:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe scripts\generate_sample_invoices.py
+```
+
+`sample_inv/README.md` lists every invoice, its amounts and the audit result it is meant
+to produce, so a manual run has a known expected outcome.
+
+Those PDFs are also served by the API, which is what the UI's "Sample invoices" list
+uses — no second copy of the files ships with the frontend:
+
+- `GET /samples` lists the folder (file name, title and supplier from the PDF metadata,
+  size, and the expected outcome read from the `_valid_`/`_invalid_` file-name token);
+- `GET /samples/{file_name}` streams one PDF with `Content-Disposition: inline`, so a
+  browser can open it in a tab. Only `*.pdf` names inside the folder are served, the
+  resolved path must stay inside it, and the listing never contains page text;
+- serving a sample does **not** register a document: the UI downloads the PDF and sends it
+  through the normal upload request, so extraction and audit behave exactly as for a
+  picked file (a document that needs OCR still reports `needs_ocr`, a defective sample
+  still fails its rules).
+
+Point `VAT_AUDIT_SAMPLES_DIR` at another folder to serve different PDFs, and include
+`sample_inv/` in the deployment if the host bundles only `app/` — otherwise `GET /samples`
+returns an empty list with an explanatory note instead of failing.
+
 ## Web UI (Phase 8)
 
 `frontend/` is a single-screen Next.js console for this API. One page drives the whole
@@ -805,7 +839,11 @@ backend/
 │   └── storage/
 │       ├── __init__.py
 │       └── memory.py          # in-memory document registry
+├── sample_inv/                 # generated sample invoices (2 valid, 3 defective)
+│   ├── README.md              # what each file proves + expected audit result
+│   └── *.pdf                  # the five A4 tax invoices themselves
 ├── scripts/
+│   ├── generate_sample_invoices.py  # authors the five sample invoices (PyMuPDF)
 │   └── live_smoke.py          # live end-to-end run against the configured provider
 ├── tests/
 │   ├── __init__.py

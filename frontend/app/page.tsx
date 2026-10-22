@@ -40,6 +40,7 @@ import {
   extractInvoice,
   getDocument,
   listDocuments,
+  listSamples,
   storedAuditReport,
 } from "@/lib/api";
 import { AUDIT_STATUS_LABELS, formatPercent } from "@/lib/format";
@@ -49,6 +50,7 @@ import type {
   DocumentListItem,
   DocumentSummary,
   InvoiceData,
+  SampleInvoice,
 } from "@/lib/types";
 
 type BusyAction = "extract" | "audit" | "report" | null;
@@ -139,6 +141,12 @@ export default function AuditConsolePage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<DocumentSummary | null>(null);
 
+  // Bundled sample invoices, offered next to the dropzone so the screen is testable
+  // without a PDF at hand. They still travel through the normal upload request.
+  const [samples, setSamples] = useState<SampleInvoice[]>([]);
+  const [samplesLoading, setSamplesLoading] = useState(true);
+  const [samplesError, setSamplesError] = useState<string | null>(null);
+
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<DocumentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -224,6 +232,35 @@ export default function AuditConsolePage() {
       .then(() => setHealth("ok"))
       .catch(() => setHealth("down"));
   }, [refreshList]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSamplesLoading(true);
+    listSamples()
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        setSamples(response.samples);
+        // An empty folder is a deployment detail, not a failure: show its note instead.
+        setSamplesError(
+          response.samples.length === 0 ? (response.notes[0] ?? null) : null,
+        );
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setSamplesError(messageOf(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSamplesLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // --- actions --------------------------------------------------------------------
 
@@ -488,6 +525,9 @@ export default function AuditConsolePage() {
             busy={uploadBusy}
             error={uploadError}
             result={uploadResult}
+            samples={samples}
+            samplesLoading={samplesLoading}
+            samplesError={samplesError}
             onUpload={handleUpload}
           />
           <DocumentOutputPanel

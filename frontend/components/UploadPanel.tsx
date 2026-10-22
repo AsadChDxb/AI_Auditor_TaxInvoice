@@ -6,29 +6,57 @@
  * Sends the file to `POST /documents/upload` (multipart field `file`). Content
  * validation is left to the API, which checks the PDF by content, so the client only
  * pre-filters obvious mismatches and always shows the API's own message on failure.
+ *
+ * The same card offers the API's bundled sample invoices (`GET /samples`): a reviewer can
+ * open one in a new tab, or load it and let it run through exactly the `onUpload` call a
+ * picked file uses. The samples exist only to make the screen testable; the upload
+ * contract itself is unchanged.
  */
 
 import { useRef, useState } from "react";
 
-import { ExtractionStatusBadge } from "@/components/Badges";
-import { formatBytes, formatDateTime, orDash } from "@/lib/format";
-import type { DocumentSummary } from "@/lib/types";
+import { Badge, ExtractionStatusBadge } from "@/components/Badges";
+import { fetchSampleInvoice, sampleInvoiceUrl } from "@/lib/api";
+import { formatBytes, formatDateTime, orDash, type BadgeTone } from "@/lib/format";
+import type { DocumentSummary, SampleInvoice } from "@/lib/types";
+
+/** Badge tone and label describing what a bundled sample is built to prove. */
+function sampleOutcomeBadge(outcome: SampleInvoice["expected_outcome"]): {
+  tone: BadgeTone;
+  label: string;
+} {
+  if (outcome === "pass") {
+    return { tone: "good", label: "expected: pass" };
+  }
+  if (outcome === "fail") {
+    return { tone: "danger", label: "expected: fail" };
+  }
+  return { tone: "muted", label: "not labelled" };
+}
 
 export function UploadPanel({
   busy,
   error,
   result,
+  samples,
+  samplesLoading,
+  samplesError,
   onUpload,
 }: {
   busy: boolean;
   error: string | null;
   result: DocumentSummary | null;
+  samples: SampleInvoice[];
+  samplesLoading: boolean;
+  samplesError: string | null;
   onUpload: (file: File) => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragging, setDragging] = useState(false);
   const [selected, setSelected] = useState<File | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [loadingSample, setLoadingSample] = useState<string | null>(null);
+  const [pickedSample, setPickedSample] = useState<string | null>(null);
 
   function choose(file: File | undefined) {
     if (!file) {
@@ -43,6 +71,29 @@ export function UploadPanel({
     }
     setLocalError(null);
     setSelected(file);
+  }
+
+  /**
+   * Download a sample invoice and run it through the normal upload path.
+   *
+   * The fetched blob becomes a real `File`, so the request a sample produces is byte for
+   * byte the same as dragging the PDF onto the dropzone.
+   */
+  async function useSample(sample: SampleInvoice) {
+    setLoadingSample(sample.file_name);
+    setLocalError(null);
+    try {
+      const file = await fetchSampleInvoice(sample);
+      choose(file);
+      setPickedSample(sample.file_name);
+      onUpload(file);
+    } catch (caught) {
+      setLocalError(
+        caught instanceof Error ? caught.message : "Could not load the sample invoice.",
+      );
+    } finally {
+      setLoadingSample(null);
+    }
   }
 
   return (
@@ -131,6 +182,76 @@ export function UploadPanel({
 
         {localError ? <div className="alert alert-error">{localError}</div> : null}
         {error ? <div className="alert alert-error">{error}</div> : null}
+
+        <div className="sample-box">
+          <div className="sample-head">
+            <span className="sample-heading">Sample invoices</span>
+            {samples.length > 0 ? (
+              <Badge tone="info">{samples.length} available</Badge>
+            ) : null}
+          </div>
+          <p className="card-sub">
+            Generated test documents: two valid and three with a known defect. Use one to
+            run the whole workflow without a file at hand - the PDF is uploaded exactly
+            like a file you pick yourself.
+          </p>
+
+          {samplesLoading ? <p className="card-sub">Loading samples…</p> : null}
+          {samplesError ? (
+            <p className="card-sub">Samples unavailable: {samplesError}</p>
+          ) : null}
+          {!samplesLoading && !samplesError && samples.length === 0 ? (
+            <p className="card-sub">No sample invoices are available on this deployment.</p>
+          ) : null}
+
+          {samples.length > 0 ? (
+            <ul className="sample-list">
+              {samples.map((sample) => {
+                const outcome = sampleOutcomeBadge(sample.expected_outcome);
+                const loading = loadingSample === sample.file_name;
+                return (
+                  <li
+                    key={sample.file_name}
+                    className="sample-row"
+                    data-picked={pickedSample === sample.file_name}
+                  >
+                    <span className="sample-copy">
+                      <span className="sample-name" title={sample.file_name}>
+                        {sample.title}
+                      </span>
+                      <span className="card-sub">
+                        {sample.supplier_name ?? sample.file_name} ·{" "}
+                        {formatBytes(sample.size_bytes)}
+                      </span>
+                    </span>
+                    <span className="sample-actions">
+                      <Badge tone={outcome.tone}>{outcome.label}</Badge>
+                      <a
+                        className="btn btn-ghost btn-sm"
+                        href={sampleInvoiceUrl(sample)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        View PDF
+                      </a>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={busy || loadingSample !== null}
+                        onClick={() => {
+                          void useSample(sample);
+                        }}
+                      >
+                        {loading ? <span className="spinner" aria-hidden="true" /> : null}
+                        {loading ? "Loading…" : "Use sample"}
+                      </button>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </div>
       </div>
     </section>
   );

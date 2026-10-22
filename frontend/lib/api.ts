@@ -17,6 +17,8 @@ import type {
   HealthResponse,
   InvoiceData,
   InvoiceExtractionResponse,
+  SampleInvoice,
+  SampleInvoiceListResponse,
 } from "./types";
 
 export const API_BASE_URL = (
@@ -179,4 +181,42 @@ export function auditDocument(documentNo: string): Promise<AuditReport> {
 /** `GET /audit/{document_no}` — the latest stored report, without re-running the audit. */
 export function storedAuditReport(documentNo: string): Promise<AuditReport> {
   return request<AuditReport>(`/audit/${encodeURIComponent(documentNo)}`);
+}
+
+/** `GET /samples` — bundled sample invoices the upload screen can offer. */
+export function listSamples(): Promise<SampleInvoiceListResponse> {
+  return request<SampleInvoiceListResponse>("/samples");
+}
+
+/** Absolute URL that streams one sample invoice (opened in a new tab). */
+export function sampleInvoiceUrl(sample: SampleInvoice): string {
+  return `${API_BASE_URL}${sample.url}`;
+}
+
+/**
+ * Download one sample invoice as a `File`, so the UI can hand it to the very same upload
+ * call a picked file goes through.
+ *
+ * The sample is fetched as a blob instead of being posted from a URL: `POST /analysis`
+ * expects multipart form data with a real file part, and the browser cannot build that
+ * from a cross-origin link on its own.
+ */
+export async function fetchSampleInvoice(sample: SampleInvoice): Promise<File> {
+  let response: Response;
+
+  try {
+    response = await fetch(sampleInvoiceUrl(sample), { cache: "no-store" });
+  } catch {
+    throw new ApiError(
+      `Cannot reach the API at ${API_BASE_URL} to load the sample invoice.`,
+      0,
+    );
+  }
+
+  if (!response.ok) {
+    throw new ApiError(await describeFailure(response), response.status);
+  }
+
+  const blob = await response.blob();
+  return new File([blob], sample.file_name, { type: "application/pdf" });
 }

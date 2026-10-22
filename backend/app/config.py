@@ -14,6 +14,7 @@ is held in a ``SecretStr`` so it cannot be printed accidentally.
 import os
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -23,6 +24,14 @@ ENV_PREFIX = "VAT_AUDIT_"
 DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB, per the Phase 2 requirements
 DEFAULT_READ_CHUNK_BYTES = 1024 * 1024
 DEFAULT_SIGNATURE_SCAN_BYTES = 1024
+DEFAULT_SAMPLES_DIR = str(Path(__file__).resolve().parents[1] / "sample_inv")
+"""Folder holding the generated sample invoices (``backend/sample_inv``).
+
+``scripts/generate_sample_invoices.py`` writes the five sample PDFs there and
+``app/api/samples.py`` serves them read-only, so the UI can offer a sample instead of
+requiring a file on the reviewer's machine. Override with ``VAT_AUDIT_SAMPLES_DIR`` when
+the documents live somewhere else (for example on a host that bundles only ``app/``).
+"""
 
 # --- OCR fallback (Phase 9) -------------------------------------------------------
 # The PaddleOCR fallback runs only on pages whose pdfplumber text layer is too thin to
@@ -157,6 +166,9 @@ class Settings(BaseModel):
             (``VAT_AUDIT_OCR_MIN_PAGE_CHARACTERS``).
         ocr_max_pages: Upper bound on how many pages one upload may OCR, so a huge
             scanned document cannot stall the request (``VAT_AUDIT_OCR_MAX_PAGES``).
+        samples_dir: Folder the read-only samples router lists and serves
+            (``VAT_AUDIT_SAMPLES_DIR``); it defaults to ``backend/sample_inv``, where
+            ``scripts/generate_sample_invoices.py`` writes the sample invoices.
     """
 
     max_upload_size_bytes: int = DEFAULT_MAX_UPLOAD_BYTES
@@ -172,6 +184,7 @@ class Settings(BaseModel):
     ocr_dpi: int = DEFAULT_OCR_DPI
     ocr_min_page_characters: int = DEFAULT_OCR_MIN_PAGE_CHARACTERS
     ocr_max_pages: int = DEFAULT_OCR_MAX_PAGES
+    samples_dir: str = DEFAULT_SAMPLES_DIR
 
     @property
     def max_upload_size_mb(self) -> float:
@@ -206,6 +219,7 @@ settings = Settings(
         "OCR_MIN_PAGE_CHARACTERS", DEFAULT_OCR_MIN_PAGE_CHARACTERS
     ),
     ocr_max_pages=_positive_int_from_env("OCR_MAX_PAGES", DEFAULT_OCR_MAX_PAGES),
+    samples_dir=_text_from_env("SAMPLES_DIR", DEFAULT_SAMPLES_DIR),
 )
 
 

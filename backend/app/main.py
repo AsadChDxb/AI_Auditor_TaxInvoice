@@ -13,6 +13,9 @@ Phase 10 adds ``POST /analysis``: the same pipeline (text extraction, structured
 invoice extraction and audit) in one self-contained request, for serverless hosts such
 as Vercel where two requests may be served by different instances and process-local
 memory cannot be relied on.
+``GET /samples`` (with ``GET /samples/{file_name}``) serves the generated sample
+invoices read-only, so the upload screen can offer a ready-made document for testing
+without requiring a file on the reviewer's machine.
 """
 
 from fastapi import FastAPI
@@ -22,6 +25,7 @@ from pydantic import BaseModel
 from app.api.analysis import router as analysis_router
 from app.api.audits import router as audits_router
 from app.api.documents import router as documents_router
+from app.api.samples import router as samples_router
 from app.config import get_cors_allow_origins
 
 APP_TITLE = "UAE VAT Audit API"
@@ -75,6 +79,7 @@ app.add_middleware(
 app.include_router(analysis_router)
 app.include_router(documents_router)
 app.include_router(audits_router)
+app.include_router(samples_router)
 
 
 

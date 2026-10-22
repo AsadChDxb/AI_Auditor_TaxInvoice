@@ -428,6 +428,83 @@ a {
   font-size: 12.5px;
 }
 
+/* --- sample invoices (testing aid) ----------------------------------------------- */
+
+.sample-box {
+  margin-top: 16px;
+  padding-top: 13px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.sample-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sample-heading {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.sample-box .card-sub {
+  margin: 0;
+}
+
+.sample-list {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sample-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  background: var(--surface-2);
+}
+
+.sample-row[data-picked="true"] {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.sample-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sample-name {
+  font-size: 12.5px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sample-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 /* --- meta / key-value ------------------------------------------------------------ */
 
 .meta-grid {
@@ -802,6 +879,15 @@ table.data tbody tr:last-child td {
 
   .page {
     padding: 16px 14px 0;
+  }
+
+  .sample-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sample-actions {
+    justify-content: flex-end;
   }
 }
 

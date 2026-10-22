@@ -258,3 +258,24 @@ export interface DocumentAnalysisResponse {
   message: string;
   notes: string[];
 }
+
+/** What a bundled sample is built to prove, read from its file-name convention. */
+export type SampleExpectedOutcome = "pass" | "fail" | "unknown";
+
+/** One bundled sample invoice served read-only by the API (`GET /samples`). */
+export interface SampleInvoice {
+  file_name: string;
+  title: string;
+  supplier_name: string | null;
+  size_bytes: number;
+  expected_outcome: SampleExpectedOutcome;
+  /** Relative API path that streams the PDF, for example `/samples/01_....pdf`. */
+  url: string;
+}
+
+/** Response of `GET /samples`. */
+export interface SampleInvoiceListResponse {
+  total: number;
+  samples: SampleInvoice[];
+  notes: string[];
+}
