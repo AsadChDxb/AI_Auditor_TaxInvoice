@@ -530,7 +530,7 @@ export default function AuditConsolePage() {
               className="btn btn-invert btn-sm"
               onClick={openArchitecture}
             >
-              Technical architecture
+              Architecture
             </button>
             <a
               className="btn btn-invert btn-sm"

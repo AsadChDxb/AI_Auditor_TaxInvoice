@@ -856,14 +856,14 @@ table.data tbody tr:last-child td {
   gap: 16px;
 }
 
-/* --- technical architecture (header modal) --------------------------------------- */
+/* --- architecture diagram (opened from the header) -------------------------------- */
 
 .arch-modal {
   width: min(1180px, 100%);
 }
 
 .arch-body {
-  gap: 18px;
+  gap: 14px;
 }
 
 .arch-live {
@@ -901,73 +901,186 @@ table.data tbody tr:last-child td {
   }
 }
 
-.arch-hero {
+.arch-canvas {
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  padding: 10px 12px;
   background:
-    radial-gradient(900px 180px at 0% 0%, rgba(67, 56, 202, 0.1), transparent 70%),
-    var(--surface-2);
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+    radial-gradient(900px 240px at 10% 0%, rgba(67, 56, 202, 0.08), transparent 70%),
+    linear-gradient(180deg, var(--surface), var(--surface-2));
+  overflow-x: auto;
 }
 
-.arch-strip {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
+.arch-canvas svg {
+  display: block;
+  width: 100%;
+  min-width: 720px;
+  height: auto;
 }
 
-.arch-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
-  border-radius: 999px;
-  padding: 7px 12px;
-  box-shadow: var(--shadow);
-  white-space: nowrap;
+/* A bright segment travels along every track: the "current" between two steps. */
+
+.diagram-track {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 
-.arch-chip-icon {
-  font-size: 15px;
-  line-height: 1;
+.diagram-flow {
+  fill: none;
+  stroke: #6366f1;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-dasharray: 14 86;
+  animation: diagram-flow 3.2s linear infinite;
+  filter: drop-shadow(0 0 3px rgba(99, 102, 241, 0.8));
 }
 
-.arch-chip-label {
-  font-size: 12.5px;
-  font-weight: 700;
+@keyframes diagram-flow {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
-.arch-chip-tech {
+.diagram-track-dashed {
+  fill: none;
+  stroke: #94a3b8;
+  stroke-width: 1.8;
+  stroke-dasharray: 6 5;
+  stroke-linecap: round;
+}
+
+.diagram-label {
   font-family: var(--mono);
+  font-size: 9.5px;
+  fill: var(--muted);
+}
+
+.diagram-caption {
   font-size: 10.5px;
+  fill: #94a3b8;
+}
+
+.diagram-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 11.5px;
   color: var(--muted);
 }
 
-.arch-link {
-  position: relative;
-  flex: 1 1 22px;
-  min-width: 22px;
-  height: 2px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(67, 56, 202, 0.16), rgba(67, 56, 202, 0.4));
+.diagram-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diagram-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+
+.diagram-dot-client {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+
+.diagram-dot-api {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.diagram-dot-ai {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+}
+
+.diagram-dot-rules {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+/* The boundary: the model proposes, Python decides. */
+
+.arch-boundary {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   overflow: hidden;
+  background: var(--surface);
+}
+
+.arch-boundary-side {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.arch-boundary-side strong {
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.arch-boundary-ai {
+  background: var(--info-soft);
+}
+
+.arch-boundary-ai strong {
+  color: var(--info);
+}
+
+.arch-boundary-rules {
+  background: var(--good-soft);
+}
+
+.arch-boundary-rules strong {
+  color: var(--good);
+}
+
+.arch-boundary-arrow {
+  position: relative;
+  flex: 0 0 54px;
+  overflow: hidden;
+}
+
+.arch-boundary-arrow::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 8px;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  background: #94a3b8;
+}
+
+.arch-boundary-arrow::after {
+  content: "";
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  margin-top: -5px;
+  border-left: 8px solid #94a3b8;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
 }
 
 .arch-spark {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(165, 180, 252, 0.9) 45%,
-    #6366f1 55%,
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.95), transparent);
   transform: translateX(-100%);
   animation: arch-spark 2.2s linear infinite;
 }
@@ -978,329 +1091,10 @@ table.data tbody tr:last-child td {
   }
 }
 
-.arch-hero-note {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.arch-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-
-/* The vertical "circuit": a dashed spine whose dashes run downwards, plus packets. */
-
-.arch-flow {
-  position: relative;
-  padding-left: 46px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  isolation: isolate;
-}
-
-.arch-flow::before {
-  content: "";
-  position: absolute;
-  left: 16px;
-  top: 10px;
-  bottom: 10px;
-  width: 2px;
-  border-radius: 999px;
-  background: repeating-linear-gradient(
-    180deg,
-    rgba(67, 56, 202, 0.55) 0 9px,
-    rgba(67, 56, 202, 0.1) 9px 18px
-  );
-  background-size: 100% 36px;
-  animation: arch-current 1.6s linear infinite;
-}
-
-@keyframes arch-current {
-  from {
-    background-position: 0 0;
-  }
+@keyframes arch-spark-v {
   to {
-    background-position: 0 36px;
+    transform: translateY(100%);
   }
-}
-
-.arch-packet {
-  position: absolute;
-  left: 12px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #6366f1;
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.16), 0 0 16px 4px rgba(99, 102, 241, 0.5);
-  animation: arch-packet-travel 7.5s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes arch-packet-travel {
-  0% {
-    top: -8px;
-    opacity: 0;
-  }
-  4% {
-    opacity: 1;
-  }
-  96% {
-    opacity: 1;
-  }
-  100% {
-    top: calc(100% + 2px);
-    opacity: 0;
-  }
-}
-
-.arch-stage {
-  position: relative;
-}
-
-.arch-node {
-  position: absolute;
-  left: -46px;
-  top: 12px;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  font-weight: 750;
-  color: var(--brand);
-  background: var(--surface);
-  border: 2px solid var(--brand);
-  box-shadow: 0 0 0 4px rgba(67, 56, 202, 0.08);
-  z-index: 1;
-}
-
-.arch-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
-}
-
-.arch-card:hover {
-  border-color: var(--brand);
-  box-shadow: 0 10px 24px -18px rgba(67, 56, 202, 0.75);
-  transform: translateY(-1px);
-}
-
-.arch-card-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.arch-kicker {
-  font-size: 10.5px;
-  font-weight: 750;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--brand);
-}
-
-.arch-title {
-  font-size: 14px;
-}
-
-.arch-io {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--muted);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 2px 8px;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-
-.arch-points {
-  margin: 0;
-  padding-left: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12.5px;
-}
-
-.arch-points li::marker {
-  color: var(--brand);
-}
-
-.arch-tech {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.arch-tech span {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  font-weight: 650;
-  color: var(--brand);
-  background: var(--brand-soft);
-  border: 1px solid #c7d2fe;
-  border-radius: 999px;
-  padding: 2px 8px;
-}
-
-.arch-files {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-
-.arch-side {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.arch-panel {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.arch-panel h3 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--muted);
-}
-
-.arch-panel-warn {
-  border-color: #fde68a;
-  background: var(--warn-soft);
-}
-
-.arch-panel-warn h3 {
-  color: #92400e;
-}
-
-.arch-stack {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.arch-stack dt {
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-}
-
-.arch-stack dd {
-  margin: 0;
-  font-size: 12px;
-}
-
-.arch-rules {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.arch-rule {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border-bottom: 1px dashed var(--border);
-  padding-bottom: 7px;
-}
-
-.arch-rule:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
-}
-
-.arch-rule-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.arch-rule-id {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.arch-rule-note {
-  font-size: 11.5px;
-  color: var(--muted);
-}
-
-.arch-guardrails {
-  margin: 0;
-  padding-left: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: #78350f;
-}
-
-.arch-guardrails li::marker {
-  color: var(--warn);
-}
-
-.arch-footnote {
-  font-size: 11.5px;
-  color: var(--muted);
-}
-
-.arch-failures {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.arch-failure {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.arch-code {
-  flex-shrink: 0;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--danger);
-  background: var(--danger-soft);
-  border: 1px solid #fecaca;
-  border-radius: 999px;
-  padding: 1px 7px;
-  white-space: nowrap;
 }
 
 /* --- responsive ------------------------------------------------------------------ */
@@ -1316,15 +1110,6 @@ table.data tbody tr:last-child td {
 
   .kv-list {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .arch-columns {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .arch-side {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1346,54 +1131,55 @@ table.data tbody tr:last-child td {
     justify-content: flex-end;
   }
 
-  .arch-strip {
+  .arch-boundary {
     flex-direction: column;
-    align-items: stretch;
   }
 
-  .arch-chip {
-    justify-content: flex-start;
+  .arch-boundary-arrow {
+    flex: 0 0 34px;
   }
 
-  .arch-link {
-    display: none;
+  .arch-boundary-arrow::before {
+    left: 50%;
+    right: auto;
+    top: 0;
+    bottom: 9px;
+    width: 2px;
+    height: auto;
+    margin: 0 0 0 -1px;
   }
 
-  .arch-flow {
-    padding-left: 40px;
+  .arch-boundary-arrow::after {
+    right: auto;
+    left: 50%;
+    top: auto;
+    bottom: 2px;
+    margin: 0 0 0 -5px;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 8px solid #94a3b8;
+    border-bottom: 0;
   }
 
-  .arch-flow::before {
-    left: 14px;
-  }
-
-  .arch-node {
-    left: -40px;
-    width: 30px;
-    height: 30px;
-    font-size: 12px;
-  }
-
-  .arch-packet {
-    left: 10px;
-  }
-
-  .arch-side {
-    grid-template-columns: minmax(0, 1fr);
+  .arch-spark {
+    background: linear-gradient(180deg, transparent, rgba(99, 102, 241, 0.95), transparent);
+    transform: translateY(-100%);
+    animation-name: arch-spark-v;
   }
 }
 
 /* Motion is decoration here: the diagram stays readable with animation switched off. */
 
 @media (prefers-reduced-motion: reduce) {
+  .diagram-flow,
   .arch-spark,
-  .arch-packet,
   .arch-live-dot {
     animation: none;
   }
 
-  .arch-flow::before {
-    animation: none;
+  .diagram-flow {
+    stroke-dasharray: none;
+    opacity: 0.55;
   }
 
   .arch-spark {

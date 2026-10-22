@@ -1,223 +1,118 @@
 "use client";
 
 /**
- * "Technical architecture": the header button's explainer.
+ * "Architecture": the header button's diagram.
  *
- * A demo-friendly view of how one invoice actually moves through the system — browser →
- * FastAPI → pdfplumber (+ optional OCR) → OpenAI-compatible extraction → deterministic
- * VAT rules → LangGraph review → one JSON payload. Every stage names the real module it
- * maps to, so the diagram doubles as a map of the repository.
+ * One visual map of a single request — browser → API (read the PDF, quality gate,
+ * optional OCR) → AI extraction → deterministic VAT rules → AI review → report JSON back
+ * to the browser. Boxes are colour-coded by owner (client / API / AI / business logic) and
+ * every connector carries a bright segment that travels along it, so the data path reads
+ * like current through a circuit. No prose: the diagram is the whole explanation.
  *
- * The motion is CSS only (a running dashed spine plus travelling packets, and a spark on
- * each horizontal connector) and is switched off under `prefers-reduced-motion`.
+ * Motion is CSS only and is switched off under `prefers-reduced-motion`.
  */
 
-import { Fragment, useEffect } from "react";
+import { useEffect } from "react";
 
-import { SeverityBadge } from "@/components/Badges";
-import type { RuleSeverity } from "@/lib/types";
+const LAYERS = {
+  client: { fill: "#eef2ff", stroke: "#c7d2fe", tag: "#4338ca", label: "CLIENT" },
+  api: { fill: "#f8fafc", stroke: "#cbd5e1", tag: "#475569", label: "API" },
+  ai: { fill: "#f0f9ff", stroke: "#bae6fd", tag: "#0369a1", label: "AI" },
+  rules: { fill: "#ecfdf5", stroke: "#a7f3d0", tag: "#047857", label: "BUSINESS LOGIC" },
+} as const;
 
-type HeroStage = {
-  icon: string;
-  label: string;
-  tech: string;
-};
+type Layer = keyof typeof LAYERS;
 
-type Stage = {
-  kicker: string;
+/** One box of the diagram: layer tag, title, sub-label and an optional step number. */
+function DiagramNode({
+  x,
+  y,
+  width = 290,
+  height = 92,
+  layer,
+  step,
+  title,
+  sub,
+}: {
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  layer: Layer;
+  step?: number;
   title: string;
-  io: string;
-  points: string[];
-  tech: string[];
-  files: string;
-};
+  sub: string;
+}) {
+  const palette = LAYERS[layer];
 
-const HERO: HeroStage[] = [
-  { icon: "🖥️", label: "Browser", tech: "Next.js" },
-  { icon: "⚡", label: "API", tech: "FastAPI" },
-  { icon: "📄", label: "PDF read", tech: "pdfplumber" },
-  { icon: "🧠", label: "AI extraction", tech: "LLM" },
-  { icon: "⚖️", label: "Audit", tech: "LangGraph" },
-  { icon: "📊", label: "Report", tech: "JSON" },
-];
+  return (
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        rx={14}
+        fill={palette.fill}
+        stroke={palette.stroke}
+        strokeWidth={1.5}
+      />
+      <text
+        x={x + 16}
+        y={y + 23}
+        fill={palette.tag}
+        fontSize={9}
+        fontWeight={700}
+        letterSpacing="0.08em"
+      >
+        {palette.label}
+      </text>
+      {step === undefined ? null : (
+        <g>
+          <circle
+            cx={x + width - 22}
+            cy={y + 21}
+            r={11}
+            fill="#ffffff"
+            stroke={palette.stroke}
+            strokeWidth={1.5}
+          />
+          <text
+            x={x + width - 22}
+            y={y + 25}
+            textAnchor="middle"
+            fill={palette.tag}
+            fontSize={11}
+            fontWeight={700}
+          >
+            {step}
+          </text>
+        </g>
+      )}
+      <text x={x + 16} y={y + 50} fill="#0f172a" fontSize={15} fontWeight={700}>
+        {title}
+      </text>
+      <text x={x + 16} y={y + 70} fill="#64748b" fontSize={10.5}>
+        {sub}
+      </text>
+    </g>
+  );
+}
 
-const STAGES: Stage[] = [
-  {
-    kicker: "Step 1 · request",
-    title: "The browser posts one PDF",
-    io: "File → multipart/form-data",
-    points: [
-      "The reviewer drops a PDF (10 MB cap) or picks a bundled sample; this tab keeps the File object.",
-      "A single multipart request goes to POST /analysis with the PDF, plus document_no/invoice only when a known row is re-run.",
-      "Nothing relies on server memory: the PDF is re-sent for every action, which is what keeps a serverless host working.",
-    ],
-    tech: ["Next.js 15", "React 19", "TypeScript"],
-    files: "frontend/app/page.tsx → lib/api.ts · POST /analysis",
-  },
-  {
-    kicker: "Step 2 · API edge",
-    title: "FastAPI validates and wires the request",
-    io: "upload → DocumentRecord",
-    points: [
-      "CORS is an explicit allowlist (VAT_AUDIT_CORS_ALLOW_ORIGINS); there are no cookies and no session.",
-      "The upload is streamed into memory under the 10 MB limit, then the %PDF- signature is checked, so a renamed file is rejected by content.",
-      "Dependencies inject the OCR engine, the extraction service and the auditor, which keeps the route thin and lets tests stub each part.",
-    ],
-    tech: ["FastAPI", "Pydantic v2", "python-multipart"],
-    files: "app/api/analysis.py · app/config.py",
-  },
-  {
-    kicker: "Step 3 · reading the PDF",
-    title: "pdfplumber recovers text and tables",
-    io: "bytes → pages, text, tables",
-    points: [
-      "Per page: characters become text with collapsed whitespace, ruled lines become a (rows × cols) cell grid, and image coverage is measured.",
-      "Text and tables keep their page numbers, so a later finding can cite the page it came from.",
-      "This is the PDF's own text layer, not pixels: the five bundled samples take this path without OCR.",
-    ],
-    tech: ["pdfplumber", "pdfminer.six", "pypdfium2"],
-    files: "app/services/pdf_extractor.py · extract_page, extract_page_tables",
-  },
-  {
-    kicker: "Step 4 · quality gate",
-    title: "Thin pages go to OCR, or the run stops",
-    io: "pages → readable? yes / no",
-    points: [
-      "build_extraction_quality probes the required fields and flags any page whose text is below VAT_AUDIT_OCR_MIN_PAGE_CHARACTERS.",
-      "A candidate page is rendered at 150 DPI and read by PaddleOCR; its lines are grouped into rows and split into cells to rebuild the table.",
-      "If OCR is missing or still finds nothing, the document is marked needs_ocr and returned early - no guessed fields.",
-    ],
-    tech: ["PaddleOCR (optional)", "150 DPI", "row reconstruction"],
-    files: "app/services/ocr_fallback.py · build_extraction_quality, apply_ocr_fallback",
-  },
-  {
-    kicker: "Step 5 · AI layer",
-    title: "The model fills a fixed JSON contract",
-    io: "text + tables → InvoiceData",
-    points: [
-      "The prompt carries the page text, the reconstructed tables and the field contract; the provider is any OpenAI-compatible endpoint (base URL, key, model, structured method).",
-      "The answer is schema-validated before use: money becomes Decimal, dates are normalised to ISO, and \"not stated\" / \"N/A\" stay null instead of being guessed.",
-      "Every field keeps its own evidence and confidence, and each judgement call is recorded as a warning on the invoice.",
-    ],
-    tech: ["OpenAI-compatible", "JSON mode", "Pydantic validation"],
-    files: "app/services/llm.py · app/services/invoice_extractor.py",
-  },
-  {
-    kicker: "Step 6 · deterministic rules",
-    title: "VAT arithmetic is recomputed in Python",
-    io: "InvoiceData + ruleset → findings",
-    points: [
-      "Six configured checks run on the extracted values (right-hand panel); each returns pass, fail, warning or review_required with expected vs actual.",
-      "Money is Decimal, the rounding policy is configured (ROUND_HALF_UP by default) and comparisons use a 0.01 AED tolerance.",
-      "No model is involved here: a wrong total is arithmetic, not an opinion.",
-    ],
-    tech: ["Decimal", "ROUND_HALF_UP", "0.01 AED tolerance"],
-    files: "app/audit/nodes.py · app/audit/rules_config.py · app/audit/tools.py",
-  },
-  {
-    kicker: "Step 7 · agentic review",
-    title: "LangGraph coordinates model and tools",
-    io: "findings + evidence → AuditReport",
-    points: [
-      "load_context → select_rules → deterministic_checks → agent_review → guardrail_validate; human_review, cannot_audit and aggregate_report close the run.",
-      "The model may only reason over configured rules and deterministic tools (recompute, mask identifiers); a bounded re_extract_fields → select_rules loop can ask for evidence again.",
-      "Guardrails reject unknown or disabled rule IDs, clamp confidence, and raise a human-review flag below the configured threshold (80%).",
-    ],
-    tech: ["LangGraph", "langchain-core", "guardrails"],
-    files: "app/audit/graph.py · app/audit/nodes.py · app/audit/tools.py",
-  },
-  {
-    kicker: "Step 8 · payload",
-    title: "One response drives the whole screen",
-    io: "JSON → panels + table row",
-    points: [
-      "The response carries the document, the extracted invoice, the report and the table row together, so no follow-up request needs shared memory.",
-      "The UI renders page text/tables, the field panel with per-field evidence, findings with expected vs actual, confidence and human-review flags.",
-      "The bundled samples are served by GET /samples and take exactly this same path once they are uploaded.",
-    ],
-    tech: ["Pydantic response", "stateless client"],
-    files: "app/models/analysis.py · frontend/components/*Panel.tsx",
-  },
-];
-
-const STACK: { label: string; value: string }[] = [
-  { label: "UI", value: "Next.js 15 · React 19 · TypeScript 5" },
-  { label: "API", value: "FastAPI · Uvicorn · Pydantic v2 · pydantic-settings" },
-  { label: "PDF", value: "pdfplumber (pdfminer.six, Pillow, pypdfium2)" },
-  { label: "OCR (optional)", value: "PaddleOCR + PaddlePaddle, CPU by default" },
-  { label: "AI", value: "OpenAI-compatible chat completions, JSON mode" },
-  { label: "Agent", value: "LangGraph · langchain-core · langchain-openai" },
-  { label: "Rules", value: "Python Decimal · versioned ruleset (v1.0.0)" },
-  { label: "Storage", value: "In-process registry; the browser keeps the PDF" },
-];
-
-const RULES: { id: string; severity: RuleSeverity; note: string }[] = [
-  {
-    id: "VAT_RATE_CHECK",
-    severity: "high",
-    note: "Reported rate vs 5% for standard-rated (0% for zero-rated or exempt).",
-  },
-  {
-    id: "SUPPLIER_TRN_CHECK",
-    severity: "medium",
-    note: "Supplier TRN present and 15 digits - a format check only.",
-  },
-  {
-    id: "CUSTOMER_TRN_CHECK",
-    severity: "low",
-    note: "Customer TRN, enforced only when the deployment asks for it.",
-  },
-  {
-    id: "TAXABLE_AMOUNT_VAT_MISMATCH",
-    severity: "high",
-    note: "Recomputed taxable × rate compared with the printed VAT.",
-  },
-  {
-    id: "INVOICE_TOTAL_CHECK",
-    severity: "high",
-    note: "Taxable + VAT compared with the printed grand total.",
-  },
-  {
-    id: "VAT_CLASSIFICATION_REVIEW",
-    severity: "medium",
-    note: "An unknown VAT treatment goes to review, never to a guess.",
-  },
-];
-
-const GUARDRAILS: string[] = [
-  "Monetary arithmetic is recomputed in Python; a model can never set a verdict on its own.",
-  "Only configured rule IDs become findings; anything else is recorded as a warning.",
-  "Missing values stay null and are listed on the invoice, instead of being filled in.",
-  "Confidence below 80% or an unknown VAT treatment raises a human-review flag.",
-  "Findings are a review aid, not a VAT compliance certificate.",
-];
-
-const FAILURES: { code: string; note: string }[] = [
-  {
-    code: "413",
-    note: "Upload above VAT_AUDIT_MAX_UPLOAD_BYTES (10 MB by default), refused while streaming.",
-  },
-  {
-    code: "415",
-    note: "No %PDF- signature: a renamed file is rejected before it is parsed.",
-  },
-  {
-    code: "400",
-    note: "Empty or corrupted PDF; the reader's own message is returned as-is.",
-  },
-  {
-    code: "needs_ocr",
-    note: "Image-only PDF and OCR unavailable: the run stops instead of guessing fields.",
-  },
-  {
-    code: "409",
-    note: "Audit requested without readable text or extracted invoice fields.",
-  },
-  {
-    code: "503 · 502 · 504",
-    note: "LLM key missing, provider error or timeout - each with a short sanitised reason.",
-  },
-];
+/** A connector: a static track plus the travelling "current" segment on top of it. */
+function Flow({ d, delay = 0 }: { d: string; delay?: number }) {
+  return (
+    <g>
+      <path className="diagram-track" d={d} markerEnd="url(#diagram-arrow)" />
+      <path
+        className="diagram-flow"
+        d={d}
+        pathLength={100}
+        style={{ animationDelay: `${delay}s` }}
+      />
+    </g>
+  );
+}
 
 export function ArchitectureModal({ onClose }: { onClose: () => void }) {
   useEffect(() => {
@@ -235,7 +130,7 @@ export function ArchitectureModal({ onClose }: { onClose: () => void }) {
       className="modal-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label="Technical architecture and data flow"
+      aria-label="Architecture diagram"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -244,13 +139,7 @@ export function ArchitectureModal({ onClose }: { onClose: () => void }) {
     >
       <div className="modal arch-modal">
         <header className="modal-head">
-          <div>
-            <h2 className="card-title">Technical architecture</h2>
-            <p className="card-sub">
-              One invoice, end to end: request → PDF text → AI extraction → deterministic
-              audit → report.
-            </p>
-          </div>
+          <h2 className="card-title">Architecture</h2>
           <div className="row-wrap">
             <span className="arch-live">
               <span className="arch-live-dot" aria-hidden="true" />
@@ -261,140 +150,199 @@ export function ArchitectureModal({ onClose }: { onClose: () => void }) {
             </button>
           </div>
         </header>
-
         <div className="modal-body arch-body">
-          <section className="arch-hero">
-            <div className="arch-strip">
-              {HERO.map((stage, index) => (
-                <Fragment key={stage.label}>
-                  <span className="arch-chip">
-                    <span className="arch-chip-icon" aria-hidden="true">
-                      {stage.icon}
-                    </span>
-                    <span className="arch-chip-label">{stage.label}</span>
-                    <span className="arch-chip-tech">{stage.tech}</span>
-                  </span>
-                  {index < HERO.length - 1 ? (
-                    <span className="arch-link" aria-hidden="true">
-                      <span
-                        className="arch-spark"
-                        style={{ animationDelay: `${index * 0.28}s` }}
-                      />
-                    </span>
-                  ) : null}
-                </Fragment>
-              ))}
-            </div>
-            <p className="arch-hero-note">
-              The same request runs both directions:{" "}
-              <span className="mono small">POST /analysis</span> returns the document, the
-              extracted invoice, the audit report and the table row in one payload. The
-              samples offered in Step 1 travel this exact path.
-            </p>
-          </section>
+          <div className="arch-canvas">
+            <svg
+              viewBox="0 0 1160 470"
+              role="img"
+              aria-label="Request flow: the browser sends the PDF to the API, the API reads text and tables and falls back to OCR for image-only pages, the AI extracts the invoice fields, the business-logic rules check VAT, the AI review adds findings, and one JSON response returns to the browser."
+            >
+              <defs>
+                <marker
+                  id="diagram-arrow"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+                </marker>
+              </defs>
 
-          <div className="arch-columns">
-            <section className="arch-flow" aria-label="Stage-by-stage data flow">
-              <span
-                className="arch-packet"
-                style={{ animationDelay: "0s" }}
-                aria-hidden="true"
-              />
-              <span
-                className="arch-packet"
-                style={{ animationDelay: "2.5s" }}
-                aria-hidden="true"
-              />
-              <span
-                className="arch-packet"
-                style={{ animationDelay: "5s" }}
-                aria-hidden="true"
+              {/* 1 → 2 → 3 across the top, down the right side, then 4 → 5 → 6 back. */}
+              <Flow d="M 380 98 H 457" />
+              <Flow d="M 750 98 H 827" delay={0.5} />
+              <Flow d="M 975 144 V 313" delay={1} />
+              <Flow d="M 830 362 H 753" delay={1.5} />
+              <Flow d="M 460 362 H 383" delay={2} />
+              <Flow
+                d="M 88 362 H 56 Q 44 362 44 350 V 110 Q 44 98 56 98 H 88"
+                delay={0.8}
               />
 
-              {STAGES.map((stage, index) => (
-                <article className="arch-stage" key={stage.title}>
-                  <span className="arch-node" aria-hidden="true">
-                    {index + 1}
-                  </span>
-                  <div className="arch-card">
-                    <header className="arch-card-head">
-                      <div>
-                        <div className="arch-kicker">{stage.kicker}</div>
-                        <h3 className="arch-title">{stage.title}</h3>
-                      </div>
-                      <span className="arch-io">{stage.io}</span>
-                    </header>
-                    <ul className="arch-points">
-                      {stage.points.map((point) => (
-                        <li key={point}>{point}</li>
-                      ))}
-                    </ul>
-                    <div className="arch-tech">
-                      {stage.tech.map((tech) => (
-                        <span key={tech}>{tech}</span>
-                      ))}
-                    </div>
-                    <div className="arch-files">{stage.files}</div>
-                  </div>
-                </article>
-              ))}
-            </section>
+              {/* Optional OCR branch, only for image-only pages. */}
+              <path
+                className="diagram-track-dashed"
+                d="M 605 144 V 187"
+                markerEnd="url(#diagram-arrow)"
+              />
+              <path
+                className="diagram-track-dashed"
+                d="M 730 228 Q 850 228 936 152"
+                markerEnd="url(#diagram-arrow)"
+              />
 
-            <aside className="arch-side">
-              <section className="arch-panel">
-                <h3>Stack</h3>
-                <dl className="arch-stack">
-                  {STACK.map((item) => (
-                    <div key={item.label}>
-                      <dt>{item.label}</dt>
-                      <dd>{item.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </section>
+              <DiagramNode
+                x={90}
+                y={52}
+                layer="client"
+                step={1}
+                title="Browser UI"
+                sub="upload · results"
+              />
+              <DiagramNode
+                x={460}
+                y={52}
+                layer="api"
+                step={2}
+                title="Read PDF"
+                sub="text + tables · gate"
+              />
+              <DiagramNode
+                x={830}
+                y={52}
+                layer="ai"
+                step={3}
+                title="AI extraction"
+                sub="fields + confidence"
+              />
+              <DiagramNode
+                x={830}
+                y={316}
+                layer="rules"
+                step={4}
+                title="VAT rules"
+                sub="6 deterministic checks"
+              />
+              <DiagramNode
+                x={460}
+                y={316}
+                layer="ai"
+                step={5}
+                title="AI review"
+                sub="evidence · configured rules"
+              />
+              <DiagramNode
+                x={90}
+                y={316}
+                layer="api"
+                step={6}
+                title="Report"
+                sub="status · confidence"
+              />
 
-              <section className="arch-panel">
-                <h3>Configured VAT rules ({RULES.length})</h3>
-                <ul className="arch-rules">
-                  {RULES.map((rule) => (
-                    <li className="arch-rule" key={rule.id}>
-                      <span className="arch-rule-head">
-                        <span className="arch-rule-id">{rule.id}</span>
-                        <SeverityBadge severity={rule.severity} />
-                      </span>
-                      <span className="arch-rule-note">{rule.note}</span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
+              {/* The OCR fallback box (dashed: optional). */}
+              <g>
+                <rect
+                  x={480}
+                  y={190}
+                  width={250}
+                  height={76}
+                  rx={12}
+                  fill="#f8fafc"
+                  stroke="#94a3b8"
+                  strokeWidth={1.5}
+                  strokeDasharray="6 5"
+                />
+                <text
+                  x={496}
+                  y={212}
+                  fill="#475569"
+                  fontSize={9}
+                  fontWeight={700}
+                  letterSpacing="0.08em"
+                >
+                  OPTIONAL
+                </text>
+                <text x={496} y={236} fill="#0f172a" fontSize={14} fontWeight={700}>
+                  OCR fallback
+                </text>
+                <text x={496} y={254} fill="#64748b" fontSize={10.5}>
+                  image-only pages
+                </text>
+              </g>
 
-              <section className="arch-panel arch-panel-warn">
-                <h3>Guardrails</h3>
-                <ul className="arch-guardrails">
-                  {GUARDRAILS.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </section>
+              {/* What travels between the boxes. */}
+              <text className="diagram-label" x={419} y={88} textAnchor="middle">
+                PDF
+              </text>
+              <text className="diagram-label" x={789} y={88} textAnchor="middle">
+                pages
+              </text>
+              <text className="diagram-label" x={986} y={236}>
+                fields
+              </text>
+              <text className="diagram-label" x={792} y={352} textAnchor="middle">
+                findings
+              </text>
+              <text className="diagram-label" x={421} y={352} textAnchor="middle">
+                confidence
+              </text>
+              <text
+                className="diagram-label"
+                x={62}
+                y={230}
+                textAnchor="middle"
+                transform="rotate(-90 62 230)"
+              >
+                json
+              </text>
+              <text className="diagram-label" x={612} y={172}>
+                thin page
+              </text>
+              <text className="diagram-label" x={851} y={252} textAnchor="middle">
+                recovered text
+              </text>
 
-              <section className="arch-panel">
-                <h3>Failure modes (as implemented)</h3>
-                <ul className="arch-failures">
-                  {FAILURES.map((item) => (
-                    <li className="arch-failure" key={item.code}>
-                      <span className="arch-code">{item.code}</span>
-                      <span className="arch-rule-note">{item.note}</span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
+              <text className="diagram-caption" x={580} y={446} textAnchor="middle">
+                1 request → 1 response
+              </text>
+            </svg>
+          </div>
 
-              <p className="arch-footnote">
-                Paths are relative to the repository: <span className="mono">backend/app</span>{" "}
-                and <span className="mono">frontend</span>. The ruleset is configuration, not
-                law - review it against current UAE FTA guidance before production use.
-              </p>
-            </aside>
+          <div className="diagram-legend">
+            <span>
+              <span className="diagram-dot diagram-dot-client" aria-hidden="true" />
+              Client
+            </span>
+            <span>
+              <span className="diagram-dot diagram-dot-api" aria-hidden="true" />
+              API
+            </span>
+            <span>
+              <span className="diagram-dot diagram-dot-ai" aria-hidden="true" />
+              AI
+            </span>
+            <span>
+              <span className="diagram-dot diagram-dot-rules" aria-hidden="true" />
+              Business logic
+            </span>
+          </div>
+
+          <div className="arch-boundary">
+            <span className="arch-boundary-side arch-boundary-ai">
+              <strong>AI</strong>
+              <span>fields + confidence</span>
+            </span>
+            <span className="arch-boundary-arrow" aria-hidden="true">
+              <span className="arch-spark" />
+            </span>
+            <span className="arch-boundary-side arch-boundary-rules">
+              <strong>Business logic</strong>
+              <span>recomputes VAT · decides status</span>
+            </span>
           </div>
         </div>
       </div>
